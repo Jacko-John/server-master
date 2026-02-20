@@ -1,0 +1,89 @@
+# ServerMaster 配置文件示例 (config.yaml.example)
+
+# --- 基础网络设置 ---
+# 服务监听地址和端口
+listen: ":8080"
+
+# Gin 运行模式: debug, release, test
+gin-mode: "release"
+
+# --- 日志设置 ---
+log:
+  # 日志级别: debug, info, warn, error
+  level: "info"
+  # 日志格式: json, text
+  format: "json"
+
+# --- 授权设置 ---
+# 访问 /sub 接口所需的 Token 列表（通过查询参数 ?token=xxx 传递）
+# 至少需要配置一个 Token 才能正常使用
+tokens:
+  - "your-secret-token-1"
+  - "another-token-for-friend"
+
+# --- 文件路径设置 ---
+# 本地基础代理配置文件的路径（YAML 格式，包含本地节点信息）
+proxy-path: "workspace.d/proxy.yaml"
+
+# 日志文件保存路径
+log-path: "server.log"
+
+# 本地规则集文件存放目录（用于 /file/{filename} 接口）
+rule-path: "workspace.d/ruleset/"
+
+# --- 订阅响应头设置 (Clash 客户端显示相关) ---
+subscription:
+  # 订阅文件下载时的默认文件名
+  filename: "Jacko.yaml"
+  # 建议客户端自动更新的时间间隔（单位：小时）
+  update-interval: 18
+  # 在 Clash 等客户端中显示的个人主页链接
+  profile-url: "https://jacko-john.top"
+
+# --- 外部订阅合并设置 (Additions) ---
+# 会自动抓取这些订阅并将节点、规则合并到生成的配置中
+additions:
+  - url: "https://remote-sub.com/sub?token=xxx"
+    # 合并后对应的代理组名称
+    group-name: "香港节点"
+    # 代理组类型: select (手动选择), url-test (自动测速)
+    group-type: "select"
+    # 在生成的规则列表最前端插入的自定义规则
+    prepend-rules:
+      - "DOMAIN-SUFFIX,google.com,香港节点"
+    # 在生成的规则列表最后端追加的自定义规则
+    append-rules:
+      - "MATCH,香港节点"
+
+# --- 后台定时任务设置 (Cron) ---
+cron:
+  # 1. 动态端口映射任务 (Dynamic Port)
+  # 通过 iptables 随机化本地转发端口，增加安全性
+  dynamic-port:
+    enable: false
+    # 随机端口生成的范围 [min, max]
+    min: 10000
+    max: 65535
+    # 同时维持的活跃端口数量
+    active-num: 3
+    # 转发的目标端口（例如本机运行的 Trojan 端口）
+    trojan-port: 443
+    # 执行周期，符合 cron 表达式格式
+    # @every 1m 表示每分钟执行一次
+    cycle: "@every 1m"
+
+  # 2. 规则集自动更新任务 (Rule Set)
+  # 自动从远程下载规则集文件并保存到本地 rule-path
+  rule-set:
+    enable: true
+    # 执行周期：@every 1h 表示每小时更新一次
+    cycle: "@every 1h"
+    # 直连规则集下载链接列表
+    direct:
+      - "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/direct.txt"
+    # 代理规则集下载链接列表
+    proxy:
+      - "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/proxy.txt"
+    # 拦截规则集下载链接列表
+    reject:
+      - "https://raw.githubusercontent.com/Loyalsoldier/clash-rules/release/reject.txt"
