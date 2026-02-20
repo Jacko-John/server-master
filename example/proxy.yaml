@@ -1,0 +1,120 @@
+# ServerMaster 基础代理配置文件样例 (proxy.yaml)
+# 此文件定义了本地的基础节点、代理组和初始规则。
+# ServerMaster 会将此文件作为模板，动态合并 additions 中的远程订阅节点。
+
+# --- 基础配置 ---
+mixed-port: 7890
+allow-lan: true
+mode: rule
+log-level: info
+ipv6: false
+
+# --- DNS 设置 ---
+dns:
+  enable: true
+  listen: :53
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - 223.5.5.5
+    - 114.114.114.114
+  fallback:
+    - https://doh.pub/dns-query
+    - https://dns.alicdn.com/dns-query
+
+# --- 本地代理节点 (Proxies) ---
+proxies:
+  # Trojan 节点示例
+  - name: "本地-新加坡-Trojan"
+    type: trojan
+    server: example-sg.com
+    port: 443
+    password: "your-password"
+    udp: true
+    sni: example-sg.com
+    skip-cert-verify: false
+
+  # Shadowsocks 节点示例
+  - name: "本地-日本-SS"
+    type: ss
+    server: example-jp.com
+    port: 8388
+    cipher: aes-256-gcm
+    password: "your-password"
+    udp: true
+
+  # VLESS 节点示例 (Clash Premium/Meta 支持)
+  - name: "本地-美国-VLESS"
+    type: vless
+    server: example-us.com
+    port: 443
+    uuid: "your-uuid"
+    udp: true
+    tls: true
+    network: ws
+    sni: example-us.com
+
+# --- 代理组 (Proxy Groups) ---
+# ServerMaster 会在生成的配置中保留这些组，
+# 并根据 config.yaml 中的 additions 设置，将远程节点加入到指定的组中。
+proxy-groups:
+  - name: "🚀 节点选择"
+    type: select
+    proxies:
+      - "🎯 全球直连"
+      - "香港节点" # 对应 config.yaml additions 中的 group-name
+      - "新加坡节点"
+      - "本地-新加坡-Trojan"
+      - "本地-日本-SS"
+      - "本地-美国-VLESS"
+
+  - name: "香港节点"
+    type: select
+    proxies:
+      - "DIRECT"
+
+  - name: "新加坡节点"
+    type: select
+    proxies:
+      - "本地-新加坡-Trojan"
+
+  - name: "🎯 全球直连"
+    type: select
+    proxies:
+      - "DIRECT"
+
+  - name: "🐟 漏网之鱼"
+    type: select
+    proxies:
+      - "🚀 节点选择"
+      - "🎯 全球直连"
+
+# --- 规则集 (Rule Providers) ---
+# 配合 /file/:filename 接口使用
+rule-providers:
+  direct:
+    type: http
+    behavior: classical
+    url: "http://localhost:8080/file/direct.yaml"
+    path: ./ruleset/direct.yaml
+    interval: 86400
+  proxy:
+    type: http
+    behavior: classical
+    url: "http://localhost:8080/file/proxy.yaml"
+    path: ./ruleset/proxy.yaml
+    interval: 86400
+  reject:
+    type: http
+    behavior: classical
+    url: "http://localhost:8080/file/reject.yaml"
+    path: ./ruleset/reject.yaml
+    interval: 86400
+
+# --- 路由规则 (Rules) ---
+rules:
+  - RULE-SET,reject,REJECT
+  - RULE-SET,direct,DIRECT
+  - RULE-SET,proxy,🚀 节点选择
+  - GEOIP,CN,DIRECT
+  - MATCH,🐟 漏网之鱼
