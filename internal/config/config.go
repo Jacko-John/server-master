@@ -40,7 +40,6 @@ type Addition struct {
         GroupName    string   `yaml:"group-name" json:"group_name"`
         GroupType    string   `yaml:"group-type" json:"group_type"`
         PrependRules []string `yaml:"prepend-rules" json:"prepend_rules"`
-        AppendRules  []string `yaml:"append-rules" json:"append_rules"`
 }
 
 // CronConfig holds configurations for background tasks

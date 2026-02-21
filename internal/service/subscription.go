@@ -54,7 +54,6 @@ type Dependency struct {
 	Proxies      []model.ClashProxy
 	ProxyGroups  []model.ClashProxyGroup
 	PrependRules []string
-	AppendRules  []string
 	UserInfo     string
 }
 
@@ -120,7 +119,6 @@ func (s *SubscriptionService) GetDependencies(ctx context.Context) (*Dependency,
 			}
 			dependency.ProxyGroups = append(dependency.ProxyGroups, group)
 			dependency.PrependRules = append(dependency.PrependRules, it.PrependRules...)
-			dependency.AppendRules = append(dependency.AppendRules, it.AppendRules...)
 
 			if info := resp.Header.Get("Subscription-Userinfo"); info != "" {
 				if userInfo == "" || (len(info) > len(userInfo)) {
@@ -210,7 +208,6 @@ func (s *SubscriptionService) GenerateConfig(ctx context.Context) (*model.ClashC
 		proxy.Proxies = append(proxy.Proxies, dp.Proxies...)
 		proxy.ProxyGroups = append(proxy.ProxyGroups, dp.ProxyGroups...)
 		proxy.Rules = append(dp.PrependRules, proxy.Rules...)
-		proxy.Rules = append(proxy.Rules, dp.AppendRules...)
 	}
 
 	return proxy, dp.UserInfo, nil

@@ -51,9 +51,6 @@ additions:
     # 在生成的规则列表最前端插入的自定义规则
     prepend-rules:
       - "DOMAIN-SUFFIX,google.com,香港节点"
-    # 在生成的规则列表最后端追加的自定义规则
-    append-rules:
-      - "MATCH,香港节点"
 
 # --- 后台定时任务设置 (Cron) ---
 cron:
