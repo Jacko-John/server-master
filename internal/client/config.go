@@ -10,7 +10,6 @@ import (
 
 type Config struct {
 	ServerURL      string       `yaml:"server-url" json:"server_url"`
-	Token          string       `yaml:"token" json:"token"`
 	ConfigPath     string       `yaml:"config-path" json:"config_path"`
 	UpdateInterval int          `yaml:"update-interval" json:"update_interval"`
 	Additions      []Addition   `yaml:"additions" json:"additions"`

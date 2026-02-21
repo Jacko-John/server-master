@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"server-master/internal/model"
@@ -80,16 +79,7 @@ func (s *Syncer) Sync(ctx context.Context) error {
 }
 
 func (s *Syncer) fetchUpstream(ctx context.Context) (*model.ClashConfig, error) {
-	subURL, err := url.Parse(s.cfg.ServerURL)
-	if err != nil {
-		return nil, err
-	}
-	subURL.Path = "/sub"
-	q := subURL.Query()
-	q.Set("token", s.cfg.Token)
-	subURL.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", subURL.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", s.cfg.ServerURL, nil)
 	if err != nil {
 		return nil, err
 	}

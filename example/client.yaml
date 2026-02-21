@@ -1,10 +1,8 @@
 # ServerMaster Client 示例配置文件
 
 # [服务端连接设置]
-# ServerMaster 服务的地址
-server-url: "http://127.0.0.1:8080"
-# 在服务端配置中定义的有效 Token
-token: "your-secret-token"
+# ServerMaster 服务的完整地址 (包含路径和 Token)
+server-url: "http://127.0.0.1:8080/sub?token=your-secret-token"
 
 # [同步设置]
 # 同步配置的时间间隔（单位：分钟）

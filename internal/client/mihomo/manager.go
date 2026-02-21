@@ -77,8 +77,12 @@ func (m *Manager) runOnce(ctx context.Context) error {
 		return err
 	}
 
+	logPath, err := filepath.Abs(m.cfg.Mihomo.LogPath)
+	if err != nil {
+		return err
+	}
+
 	// Prepare log file
-	logPath := filepath.Join(workDir, m.cfg.Mihomo.LogPath)
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)

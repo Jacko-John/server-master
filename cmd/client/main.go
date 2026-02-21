@@ -61,10 +61,6 @@ func runDaemon(syncer *client.Syncer, cfg *client.Config) {
 	var mm *mihomo.Manager
 	if cfg.Mihomo.Enable {
 		mm = mihomo.NewManager(cfg)
-		// Set ReloadFunc to use SIGHUP
-		syncer.ReloadFunc = func(ctx context.Context) error {
-			return mm.Reload()
-		}
 	}
 
 	// Initial sync
@@ -75,6 +71,10 @@ func runDaemon(syncer *client.Syncer, cfg *client.Config) {
 	// Start Mihomo after initial sync
 	if mm != nil {
 		mm.Start(ctx)
+		// Set ReloadFunc to use SIGHUP
+		syncer.ReloadFunc = func(ctx context.Context) error {
+			return mm.Reload()
+		}
 	}
 
 	ticker := time.NewTicker(time.Duration(cfg.UpdateInterval) * time.Minute)

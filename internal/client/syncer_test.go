@@ -40,8 +40,7 @@ func TestSyncer_Sync_Merge(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "final.yaml")
 
 	cfg := &Config{
-		ServerURL:  serverMaster.URL,
-		Token:      "test",
+		ServerURL:  serverMaster.URL + "/sub",
 		ConfigPath: configPath,
 		Additions: []Addition{
 			{
