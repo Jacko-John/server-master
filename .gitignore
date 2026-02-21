@@ -17,6 +17,8 @@
 # Project specific binaries
 ServerMaster
 ServerMaster.exe
+SMClient
+SMClient.exe
 
 # Go workspace file
 go.work

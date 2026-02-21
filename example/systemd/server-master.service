@@ -1,0 +1,20 @@
+[Unit]
+Description=ServerMaster - Centralized Proxy Configuration Server
+After=network.target
+
+[Service]
+Type=simple
+# 修改为 SMClient 二进制文件的实际存放路径
+ExecStart=/usr/local/bin/ServerMaster -c /etc/server-master/config.yaml
+Restart=always
+RestartSec=5
+# 涉及 iptables 操作，通常需要 root 权限
+User=root
+# 工作目录，用于存放规则集和代理文件
+WorkingDirectory=/etc/server-master
+
+# 资源限制（可选）
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

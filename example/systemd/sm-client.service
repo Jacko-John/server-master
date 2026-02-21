@@ -1,0 +1,21 @@
+[Unit]
+Description=ServerMaster Client - Sync Config & Manage Mihomo
+After=network.target
+
+[Service]
+Type=simple
+# -d 参数启动后台守护模式，自动同步并启动内核
+ExecStart=/usr/local/bin/SMClient -c /etc/sm-client/client.yaml -d
+Restart=always
+RestartSec=5
+# 如果使用 TUN 模式或需要设置网络栈，建议使用 root
+# 或者使用 Capability: AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+User=root
+WorkingDirectory=/etc/sm-client
+
+# 如果不想以 root 运行，可取消以下注释（前提是给内核 binary 设置了 setcap）
+# CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+# AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

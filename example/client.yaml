@@ -1,0 +1,53 @@
+# ServerMaster Client 示例配置文件
+
+# [服务端连接设置]
+# ServerMaster 服务的地址
+server-url: "http://127.0.0.1:8080"
+# 在服务端配置中定义的有效 Token
+token: "your-secret-token"
+
+# [同步设置]
+# 同步配置的时间间隔（单位：分钟）
+update-interval: 15
+# 最终合并后的配置文件保存路径
+# 如果开启了 mihomo 模块，此路径通常会被自动修正为 mihomo.work-dir 下的 config.yaml
+config-path: "./config.yaml"
+
+# [日志设置]
+log:
+  # 日志级别: debug, info, warn, error
+  level: "info"
+  # 日志保存路径（留空则仅输出到控制台）
+  path: "./client.log"
+  # 日志格式: text (易读), json (结构化)
+  format: "text"
+
+# [Mihomo 内核管理]
+mihomo:
+  # 是否由 SMClient 启动并守护内核进程
+  enable: true
+  # Mihomo 二进制文件的可执行路径
+  bin-path: "/usr/local/bin/mihomo"
+  # Mihomo 的工作目录（用于存放数据库、规则缓存等）
+  work-dir: "./mihomo"
+  # 内核自身的日志文件名（保存在 work-dir 下）
+  log-path: "mihomo.log"
+
+# [本地自定义规则]
+# 这些规则将具有最高优先级，会被插入到生成的配置文件最顶端
+prepend-rules:
+  - "DOMAIN-SUFFIX,google.com,Proxy"
+  - "DOMAIN-KEYWORD,internal,DIRECT"
+  - "IP-CIDR,192.168.0.0/16,DIRECT"
+
+# [本地额外订阅]
+# 您可以添加不属于 ServerMaster 管理的第三方订阅，并将其合并到本地配置中
+additions:
+  - url: "https://example.com/other-sub.yaml"
+    # 为该订阅创建一个专门的代理组
+    group-name: "Additional-Group"
+    # 代理组类型: select, url-test, fallback
+    group-type: "select"
+    # 针对该订阅源特有的前置规则
+    prepend-rules:
+      - "DOMAIN-SUFFIX,github.com,Additional-Group"
