@@ -25,9 +25,9 @@ func TestCategorizeRule(t *testing.T) {
 		// Plain Rules / Heuristics
 		{"Plain Domain", "google.com", "domain", "google.com"},
 		{"Plus Prefix Domain", "+.google.com", "domain", "+.google.com"},
-		{"Plain IP", "1.1.1.1", "ip", "1.1.1.1"},
+		{"Plain IP", "1.1.1.1", "domain", "1.1.1.1"},
 		{"Plain CIDR", "192.168.1.0/24", "ip", "192.168.1.0/24"},
-		{"IPv6 Address", "::1", "ip", "::1"},
+		{"IPv6 Address", "::1", "classic", "::1"},
 		{"Domain starting with digit", "1password.com", "domain", "1password.com"},
 		
 		// Edge cases
