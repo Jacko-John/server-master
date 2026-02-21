@@ -33,11 +33,28 @@ type DNSConfig struct {
 }
 
 type RuleProvider struct {
-	Type     string `yaml:"type" json:"type"`
-	Behavior string `yaml:"behavior" json:"behavior"`
-	Format   string `yaml:"format" json:"format"`
-	Path     string `yaml:"path" json:"path"`
-	URL      string `yaml:"url" json:"url"`
+	Type      string              `yaml:"type" json:"type"`
+	Behavior  string              `yaml:"behavior" json:"behavior"`
+	Format    string              `yaml:"format" json:"format"`
+	Path      string              `yaml:"path" json:"path"`
+	URL       string              `yaml:"url" json:"url"`
+	Interval  int                 `yaml:"interval,omitempty" json:"interval,omitempty"`
+	Proxy     string              `yaml:"proxy,omitempty" json:"proxy,omitempty"`
+	SizeLimit int64               `yaml:"size-limit,omitempty" json:"size_limit,omitempty"`
+	Header    map[string][]string `yaml:"header,omitempty" json:"header,omitempty"`
+}
+
+func (r *RuleProvider) Clone() RuleProvider {
+	newR := *r
+	if r.Header != nil {
+		newR.Header = make(map[string][]string)
+		for k, v := range r.Header {
+			newV := make([]string, len(v))
+			copy(newV, v)
+			newR.Header[k] = newV
+		}
+	}
+	return newR
 }
 
 type ClashProxyGroup struct {
@@ -103,7 +120,9 @@ func (c *ClashConfig) Clone() *ClashConfig {
 
 	if c.RuleProviders != nil {
 		newCfg.RuleProviders = make(map[string]RuleProvider)
-		maps.Copy(newCfg.RuleProviders, c.RuleProviders)
+		for k, v := range c.RuleProviders {
+			newCfg.RuleProviders[k] = v.Clone()
+		}
 	}
 
 	return newCfg
