@@ -86,3 +86,90 @@ func TestSyncer_Sync_Merge(t *testing.T) {
 		t.Errorf("Expected group name 'External', got %s", final.ProxyGroups[0].Name)
 	}
 }
+
+func TestSyncer_Sync_Overrides(t *testing.T) {
+	// 1. Setup mock ServerMaster with default config
+	defaultPort := 7890
+	serverMaster := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/sub" {
+			cfg := model.ClashConfig{
+				MixedPort:  defaultPort,
+				AllowLan:   false,
+				Mode:       "direct",
+				LogLevel:   "silent",
+				Proxies:    []model.ClashProxy{{Name: "ServerProxy"}},
+				Rules:      []string{"MATCH,DIRECT"},
+				DNS: model.DNSConfig{
+					Enable:       false,
+					EnhancedMode: "redir-host",
+				},
+			}
+			yaml.NewEncoder(w).Encode(cfg)
+		}
+	}))
+	defer serverMaster.Close()
+
+	// 2. Setup client config with overrides
+	tmpDir, _ := os.MkdirTemp("", "sm-client-override-test")
+	defer os.RemoveAll(tmpDir)
+	configPath := filepath.Join(tmpDir, "final.yaml")
+
+	overridePort := 8080
+	allowLan := true
+	mode := "rule"
+	logLevel := "info"
+
+	cfg := &Config{
+		ServerURL:  serverMaster.URL + "/sub",
+		ConfigPath: configPath,
+		Overrides: &ConfigOverrides{
+			MixedPort: &overridePort,
+			AllowLan:  &allowLan,
+			Mode:      &mode,
+			LogLevel:  &logLevel,
+			DNS: &model.DNSConfig{
+				Enable:       true,
+				EnhancedMode: "fake-ip",
+				Nameserver:   []string{"223.5.5.5"},
+			},
+		},
+	}
+
+	syncer := NewSyncer(cfg)
+
+	// 3. Execute sync
+	err := syncer.Sync(context.Background())
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+
+	// 4. Verify overrides were applied
+	data, _ := os.ReadFile(configPath)
+	var final model.ClashConfig
+	yaml.Unmarshal(data, &final)
+
+	// Check basic overrides
+	if final.MixedPort != overridePort {
+		t.Errorf("Expected MixedPort %d, got %d", overridePort, final.MixedPort)
+	}
+	if final.AllowLan != allowLan {
+		t.Errorf("Expected AllowLan %v, got %v", allowLan, final.AllowLan)
+	}
+	if final.Mode != mode {
+		t.Errorf("Expected Mode %s, got %s", mode, final.Mode)
+	}
+	if final.LogLevel != logLevel {
+		t.Errorf("Expected LogLevel %s, got %s", logLevel, final.LogLevel)
+	}
+
+	// Check DNS override
+	if !final.DNS.Enable {
+		t.Errorf("Expected DNS.Enable true, got false")
+	}
+	if final.DNS.EnhancedMode != "fake-ip" {
+		t.Errorf("Expected DNS.EnhancedMode 'fake-ip', got %s", final.DNS.EnhancedMode)
+	}
+	if len(final.DNS.Nameserver) != 1 || final.DNS.Nameserver[0] != "223.5.5.5" {
+		t.Errorf("Expected DNS.Nameserver ['223.5.5.5'], got %v", final.DNS.Nameserver)
+	}
+}
