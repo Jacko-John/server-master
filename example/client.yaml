@@ -38,6 +38,37 @@ prepend-rules:
   - "DOMAIN-KEYWORD,internal,DIRECT"
   - "IP-CIDR,192.168.0.0/16,DIRECT"
 
+# [配置覆盖]
+# 覆盖从服务器下载的配置中的特定字段
+# 未指定的字段将保留服务器配置的原始值
+overrides:
+  # 基础配置覆盖
+  mixed-port: 7890           # 混合代理端口
+  allow-lan: true            # 允许局域网访问
+  bind-address: "*"          # 绑定地址
+  mode: "rule"               # 运行模式: rule, global, direct
+  log-level: "info"          # 日志级别: silent, error, warning, info, debug
+  external-controller:       # 外部控制器地址 (例如: "127.0.0.1:9090")
+
+  # DNS 配置覆盖 (完全替换服务器配置的 DNS 设置)
+  dns:
+    enable: true
+    ipv6: false
+    enhanced-mode: "fake-ip"
+    fake-ip-range: "198.18.0.1/16"
+    default-nameserver:
+      - "223.5.5.5"
+      - "119.29.29.29"
+    nameserver:
+      - "https://dns.alidns.com/dns-query"
+      - "https://doh.pub/dns-query"
+    fallback:
+      - "https://1.1.1.1/dns-query"
+      - "https://8.8.8.8/dns-query"
+    fallback-filter:
+      geoip: true
+      geoip-code: "CN"
+
 # [本地额外订阅]
 # 您可以添加不属于 ServerMaster 管理的第三方订阅，并将其合并到本地配置中
 additions:

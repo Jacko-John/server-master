@@ -61,12 +61,18 @@ func (s *Syncer) Sync(ctx context.Context) error {
 		finalCfg.Rules = append(s.cfg.PrependRules, finalCfg.Rules...)
 	}
 
-	// 4. Save final configuration
+	// 4. Apply configuration overrides
+	if s.cfg.Overrides != nil {
+		applyOverrides(finalCfg, s.cfg.Overrides)
+		slog.Info("Applied configuration overrides")
+	}
+
+	// 5. Save final configuration
 	if err := s.saveConfig(finalCfg); err != nil {
 		return err
 	}
 
-	// 5. Trigger reload
+	// 6. Trigger reload
 	if s.ReloadFunc != nil {
 		if err := s.ReloadFunc(ctx); err != nil {
 			slog.Warn("Custom reload failed", "error", err)
@@ -167,4 +173,33 @@ func (s *Syncer) saveConfig(cfg *model.ClashConfig) error {
 
 	slog.Info("Configuration saved", "path", s.cfg.ConfigPath)
 	return nil
+}
+
+// applyOverrides 将客户端配置覆盖应用到 Clash 配置
+func applyOverrides(cfg *model.ClashConfig, overrides *ConfigOverrides) {
+	if overrides == nil {
+		return
+	}
+
+	if overrides.MixedPort != nil {
+		cfg.MixedPort = *overrides.MixedPort
+	}
+	if overrides.AllowLan != nil {
+		cfg.AllowLan = *overrides.AllowLan
+	}
+	if overrides.BindAddress != nil {
+		cfg.BindAddress = *overrides.BindAddress
+	}
+	if overrides.Mode != nil {
+		cfg.Mode = *overrides.Mode
+	}
+	if overrides.LogLevel != nil {
+		cfg.LogLevel = *overrides.LogLevel
+	}
+	if overrides.ExternalController != nil {
+		cfg.ExternalController = *overrides.ExternalController
+	}
+	if overrides.DNS != nil {
+		cfg.DNS = *overrides.DNS
+	}
 }

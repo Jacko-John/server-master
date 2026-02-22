@@ -5,17 +5,20 @@ import (
 	"os"
 	"path/filepath"
 
+	"server-master/internal/model"
+
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	ServerURL      string       `yaml:"server-url" json:"server_url"`
-	ConfigPath     string       `yaml:"config-path" json:"config_path"`
-	UpdateInterval int          `yaml:"update-interval" json:"update_interval"`
-	Additions      []Addition   `yaml:"additions" json:"additions"`
-	PrependRules   []string     `yaml:"prepend-rules" json:"prepend_rules"`
-	Mihomo         MihomoConfig `yaml:"mihomo" json:"mihomo"`
-	Log            LogConfig    `yaml:"log" json:"log"`
+	ServerURL      string           `yaml:"server-url" json:"server_url"`
+	ConfigPath     string           `yaml:"config-path" json:"config_path"`
+	UpdateInterval int              `yaml:"update-interval" json:"update_interval"`
+	Additions      []Addition       `yaml:"additions" json:"additions"`
+	PrependRules   []string         `yaml:"prepend-rules" json:"prepend_rules"`
+	Overrides      *ConfigOverrides `yaml:"overrides,omitempty" json:"overrides,omitempty"`
+	Mihomo         MihomoConfig     `yaml:"mihomo" json:"mihomo"`
+	Log            LogConfig        `yaml:"log" json:"log"`
 }
 
 type LogConfig struct {
@@ -37,6 +40,20 @@ type Addition struct {
 	GroupName    string   `yaml:"group-name" json:"group_name"`
 	GroupType    string   `yaml:"group-type" json:"group_type"`
 	PrependRules []string `yaml:"prepend-rules" json:"prepend_rules"`
+}
+
+// ConfigOverrides 定义需要覆盖的 Clash 配置项
+// 使用指针类型可以区分"未设置"和"设置为零值"的情况
+type ConfigOverrides struct {
+	// 基础配置覆盖
+	MixedPort          *int             `yaml:"mixed-port,omitempty" json:"mixed_port,omitempty"`
+	AllowLan           *bool            `yaml:"allow-lan,omitempty" json:"allow_lan,omitempty"`
+	BindAddress        *string          `yaml:"bind-address,omitempty" json:"bind_address,omitempty"`
+	Mode               *string          `yaml:"mode,omitempty" json:"mode,omitempty"`
+	LogLevel           *string          `yaml:"log-level,omitempty" json:"log_level,omitempty"`
+	ExternalController *string          `yaml:"external-controller,omitempty" json:"external_controller,omitempty"`
+	// DNS 配置覆盖（完全替换）
+	DNS                *model.DNSConfig `yaml:"dns,omitempty" json:"dns,omitempty"`
 }
 
 func LoadConfig(path string) (*Config, error) {
