@@ -72,6 +72,41 @@ func (g *ClashProxyGroup) Clone() ClashProxyGroup {
 	return newG
 }
 
+// SmuxConfig smux 多路复用配置
+type SmuxConfig struct {
+	Enabled        bool        `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Protocol       string      `yaml:"protocol,omitempty" json:"protocol,omitempty"`
+	MaxConnections int         `yaml:"max-connections,omitempty" json:"max_connections,omitempty"`
+	MinStreams     int         `yaml:"min-streams,omitempty" json:"min_streams,omitempty"`
+	MaxStreams     int         `yaml:"max-streams,omitempty" json:"max_streams,omitempty"`
+	Statistic      bool        `yaml:"statistic,omitempty" json:"statistic,omitempty"`
+	OnlyTCP        bool        `yaml:"only-tcp,omitempty" json:"only_tcp,omitempty"`
+	Padding        bool        `yaml:"padding,omitempty" json:"padding,omitempty"`
+	BrutalOpts     *BrutalOpts `yaml:"brutal-opts,omitempty" json:"brutal_opts,omitempty"`
+}
+
+// BrutalOpts Brutal 拥塞控制配置
+type BrutalOpts struct {
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Up      int  `yaml:"up,omitempty" json:"up,omitempty"`
+	Down    int  `yaml:"down,omitempty" json:"down,omitempty"`
+}
+
+func (s *SmuxConfig) Clone() *SmuxConfig {
+	if s == nil {
+		return nil
+	}
+	newS := *s
+	if s.BrutalOpts != nil {
+		newS.BrutalOpts = &BrutalOpts{
+			Enabled: s.BrutalOpts.Enabled,
+			Up:      s.BrutalOpts.Up,
+			Down:    s.BrutalOpts.Down,
+		}
+	}
+	return &newS
+}
+
 type ClashProxy struct {
 	Name           string            `yaml:"name,omitempty" json:"name,omitempty"`
 	Type           string            `yaml:"type,omitempty" json:"type,omitempty"`
@@ -84,6 +119,16 @@ type ClashProxy struct {
 	Cipher         string            `yaml:"cipher,omitempty" json:"cipher,omitempty"`
 	Plugin         string            `yaml:"plugin,omitempty" json:"plugin,omitempty"`
 	PluginOpts     map[string]string `yaml:"plugin-opts,flow,omitempty" json:"plugin_opts,omitempty"`
+	// 基础连接选项
+	IPVersion     string `yaml:"ip-version,omitempty" json:"ip_version,omitempty"`
+	InterfaceName string `yaml:"interface-name,omitempty" json:"interface_name,omitempty"`
+	RoutingMark   int    `yaml:"routing-mark,omitempty" json:"routing_mark,omitempty"`
+	TFO           bool   `yaml:"tfo,omitempty" json:"tfo,omitempty"`
+	MPTCP         bool   `yaml:"mptcp,omitempty" json:"mptcp,omitempty"`
+	// 代理链
+	DialerProxy string `yaml:"dialer-proxy,omitempty" json:"dialer_proxy,omitempty"`
+	// smux 多路复用
+	Smux *SmuxConfig `yaml:"smux,omitempty" json:"smux,omitempty"`
 }
 
 func (p *ClashProxy) Clone() ClashProxy {
@@ -91,6 +136,9 @@ func (p *ClashProxy) Clone() ClashProxy {
 	if p.PluginOpts != nil {
 		newP.PluginOpts = make(map[string]string)
 		maps.Copy(newP.PluginOpts, p.PluginOpts)
+	}
+	if p.Smux != nil {
+		newP.Smux = p.Smux.Clone()
 	}
 	return newP
 }
