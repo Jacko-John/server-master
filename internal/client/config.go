@@ -39,6 +39,7 @@ type Addition struct {
 	URL          string   `yaml:"url" json:"url"`
 	GroupName    string   `yaml:"group-name" json:"group_name"`
 	GroupType    string   `yaml:"group-type" json:"group_type"`
+	UserAgent    string   `yaml:"user-agent" json:"user_agent"`
 	PrependRules []string `yaml:"prepend-rules" json:"prepend_rules"`
 }
 

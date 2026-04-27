@@ -48,6 +48,8 @@ additions:
     group-name: "香港节点"
     # 代理组类型: select (手动选择), url-test (自动测速)
     group-type: "select"
+    # 请求该订阅时使用的 User-Agent（留空则默认使用 "Clash"）
+    user-agent: "ClashMeta/2.0"
     # 在生成的规则列表最前端插入的自定义规则
     prepend-rules:
       - "DOMAIN-SUFFIX,google.com,香港节点"

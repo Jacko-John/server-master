@@ -118,7 +118,11 @@ func (s *Syncer) mergeAdditions(ctx context.Context, base *model.ClashConfig) er
 			if err != nil {
 				return err
 			}
-			req.Header.Set("User-Agent", "Clash")
+			ua := it.UserAgent
+			if ua == "" {
+				ua = "Clash"
+			}
+			req.Header.Set("User-Agent", ua)
 
 			resp, err := s.httpClient.Do(req)
 			if err != nil {

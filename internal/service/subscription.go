@@ -85,7 +85,11 @@ func (s *SubscriptionService) GetDependencies(ctx context.Context) (*Dependency,
 				slog.Error("Failed to create request for subscription", "url", it.URL, "error", err)
 				return nil
 			}
-			req.Header.Set("User-Agent", "Clash")
+			ua := it.UserAgent
+			if ua == "" {
+				ua = "Clash"
+			}
+			req.Header.Set("User-Agent", ua)
 
 			resp, err := s.httpClient.Do(req)
 			if err != nil {
