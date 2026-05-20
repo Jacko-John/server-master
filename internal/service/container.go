@@ -5,20 +5,29 @@ import (
 	"server-master/pkg/utils"
 )
 
+// DynamicPortRuntime holds the runtime state for one dynamic port service.
+type DynamicPortRuntime struct {
+	Config *config.DynamicPortServiceConfig
+	Queue  *utils.Queue[string]
+	Port   *PortService
+}
+
 // Container holds all business services of the application.
 type Container struct {
-	Subscription *SubscriptionService
-	File         *FileService
-	Port         *PortService
-	Ruleset      *RulesetService
+	Subscription        *SubscriptionService
+	File                *FileService
+	PortServices        []*PortService
+	DynamicPortRegistry map[string]*DynamicPortRuntime
+	Ruleset             *RulesetService
 }
 
 // NewContainer initializes and returns all business services.
-func NewContainer(cfg *config.Config, queue *utils.Queue[string]) *Container {
+func NewContainer(cfg *config.Config, registry map[string]*DynamicPortRuntime, portServices []*PortService) *Container {
 	return &Container{
-		Subscription: NewSubscriptionService(cfg, queue),
-		File:         NewFileService(cfg),
-		Port:         NewPortService(cfg, queue),
-		Ruleset:      NewRulesetService(cfg),
+		Subscription:        NewSubscriptionService(cfg, registry),
+		File:                NewFileService(cfg),
+		PortServices:        portServices,
+		DynamicPortRegistry: registry,
+		Ruleset:             NewRulesetService(cfg),
 	}
 }

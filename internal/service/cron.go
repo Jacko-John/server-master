@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"log/slog"
 	"server-master/pkg/utils"
 
@@ -10,7 +11,7 @@ import (
 // Task defines the interface for a background task.
 type Task interface {
 	Name() string
-	Spec() string // Cron specification string
+	Spec() string
 	Run()
 }
 
@@ -43,6 +44,9 @@ func NewCronService() *CronService {
 // AddTask registers a new task with the scheduler.
 // If the task implements Initializer, its Init() method is called first.
 func (s *CronService) AddTask(t Task) error {
+	if s.taskIDs.Has(t.Name()) {
+		return fmt.Errorf("task %q already registered", t.Name())
+	}
 	if i, ok := t.(Initializer); ok {
 		if err := i.Init(); err != nil {
 			return err
@@ -65,7 +69,6 @@ func (s *CronService) RemoveTask(name string) {
 	if id, ok := s.taskIDs.Get(name); ok {
 		s.cron.Remove(id)
 
-		// Perform cleanup if implemented
 		if t, ok := s.tasks.Get(name); ok {
 			if c, ok := t.(Cleaner); ok {
 				c.Cleanup()

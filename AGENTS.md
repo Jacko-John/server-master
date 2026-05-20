@@ -99,7 +99,7 @@ pkg/           → Reusable utilities (logger, data structures)
 ### Cron Tasks
 
 Server runs two optional background tasks:
-1. **Dynamic Port**: Randomizes proxy listener ports via iptables (configurable via `cron.dynamic-port`)
+1. **Dynamic Port**: Randomizes local proxy listener ports via iptables (configurable via `cron.dynamic-ports`)
 2. **Rule Set**: Downloads rulesets from remote URLs (configurable via `cron.rule-set`)
 
 ### Configuration Files

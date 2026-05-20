@@ -26,33 +26,44 @@ type App struct {
 
 // New creates and assembles a new App instance.
 func New(configPath string) (*App, error) {
-	// 1. Load Config
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// 2. Init Logger
 	logFile, err := os.OpenFile(cfg.LogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open log file: %w", err)
 	}
 	logger.Init(logFile, cfg.Log.Level, cfg.Log.Format)
 
-	// 3. Set Gin Mode
 	gin.SetMode(cfg.GinMode)
 
 	slog.Info("Initializing ServerMaster...")
 
-	// 3. Build Business Services (Container)
-	queue := utils.NewQueue[string](cfg.Cron.DynamicPort.ActiveNum)
-	svcs := service.NewContainer(cfg, queue)
+	dynamicPortRegistry := make(map[string]*service.DynamicPortRuntime)
+	portServices := make([]*service.PortService, 0, len(cfg.Cron.DynamicPorts))
+	for _, dynamicPort := range cfg.Cron.DynamicPorts {
+		if !dynamicPort.Enable {
+			continue
+		}
+		dpCfg := dynamicPort
+		queue := utils.NewQueue[string](dpCfg.ActiveNum)
+		portService := service.NewPortService(dpCfg, queue)
+		dynamicPortRegistry[dpCfg.Name] = &service.DynamicPortRuntime{
+			Config: &dpCfg,
+			Queue:  queue,
+			Port:   portService,
+		}
+		portServices = append(portServices, portService)
+	}
 
-	// 4. Register Cron Tasks
+	svcs := service.NewContainer(cfg, dynamicPortRegistry, portServices)
+
 	cronService := service.NewCronService()
-	if cfg.Cron.DynamicPort.Enable {
-		if err := cronService.AddTask(svcs.Port); err != nil {
-			slog.Error("Failed to register dynamic port task", "error", err)
+	for _, portService := range svcs.PortServices {
+		if err := cronService.AddTask(portService); err != nil {
+			slog.Error("Failed to register dynamic port task", "service", portService.Name(), "error", err)
 		}
 	}
 	if cfg.Cron.RuleSet.Enable {
@@ -61,10 +72,8 @@ func New(configPath string) (*App, error) {
 		}
 	}
 
-	// 5. Build Router using default services
 	router := api.NewDefaultRouter(svcs)
 
-	// 6. Build HTTP Server
 	server := &http.Server{
 		Addr:    cfg.Listen,
 		Handler: router,
@@ -79,11 +88,9 @@ func New(configPath string) (*App, error) {
 
 // Run starts the application and blocks until the context is canceled.
 func (a *App) Run(ctx context.Context) error {
-	// 1. Start Cron Tasks
 	a.cronService.Start()
 	slog.Info("Cron tasks started")
 
-	// 2. Start HTTP Server
 	errChan := make(chan error, 1)
 	go func() {
 		slog.Info("Server listening on " + a.cfg.Listen)
@@ -92,7 +99,6 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}()
 
-	// 3. Wait for Termination Signal or Error
 	select {
 	case <-ctx.Done():
 		slog.Info("Shutting down gracefully...")
@@ -100,16 +106,13 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
-	// 4. Graceful Shutdown
 	return a.Shutdown()
 }
 
 // Shutdown performs cleanup tasks before the application exits.
 func (a *App) Shutdown() error {
-	// Stop Cron tasks
 	a.cronService.Stop()
 
-	// Shutdown HTTP Server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 

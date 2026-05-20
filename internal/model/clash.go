@@ -128,7 +128,8 @@ type ClashProxy struct {
 	// 代理链
 	DialerProxy string `yaml:"dialer-proxy,omitempty" json:"dialer_proxy,omitempty"`
 	// smux 多路复用
-	Smux *SmuxConfig `yaml:"smux,omitempty" json:"smux,omitempty"`
+	Smux  *SmuxConfig    `yaml:"smux,omitempty" json:"smux,omitempty"`
+	Extra map[string]any `yaml:",inline" json:"-"`
 }
 
 func (p *ClashProxy) Clone() ClashProxy {
@@ -140,7 +141,36 @@ func (p *ClashProxy) Clone() ClashProxy {
 	if p.Smux != nil {
 		newP.Smux = p.Smux.Clone()
 	}
+	if p.Extra != nil {
+		newP.Extra = cloneYAMLMap(p.Extra)
+	}
 	return newP
+}
+
+func cloneYAMLMap(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(src))
+	for k, v := range src {
+		cloned[k] = cloneYAMLValue(v)
+	}
+	return cloned
+}
+
+func cloneYAMLValue(v any) any {
+	switch value := v.(type) {
+	case map[string]any:
+		return cloneYAMLMap(value)
+	case []any:
+		cloned := make([]any, len(value))
+		for i := range value {
+			cloned[i] = cloneYAMLValue(value[i])
+		}
+		return cloned
+	default:
+		return value
+	}
 }
 
 func (c *ClashConfig) Clone() *ClashConfig {

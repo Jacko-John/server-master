@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"hash/crc32"
 	"log/slog"
 	"math/rand"
 	"os/exec"
@@ -10,41 +11,47 @@ import (
 )
 
 // iptablesRunner specializes in executing iptables-related commands.
-type iptablesRunner struct{}
+type iptablesRunner interface {
+	Run(args ...string) error
+}
 
-func (r *iptablesRunner) Run(args ...string) error {
+type execIptablesRunner struct{}
+
+func (r *execIptablesRunner) Run(args ...string) error {
 	return exec.Command("iptables", args...).Run()
 }
 
 type PortService struct {
-	cfg   *config.Config
-	queue *utils.Queue[string]
-	ipt   *iptablesRunner
+	dpCfg     config.DynamicPortServiceConfig
+	queue     *utils.Queue[string]
+	ipt       iptablesRunner
+	chainName string
 }
 
-func NewPortService(cfg *config.Config, queue *utils.Queue[string]) *PortService {
+func NewPortService(dpCfg config.DynamicPortServiceConfig, queue *utils.Queue[string]) *PortService {
 	return &PortService{
-		cfg:   cfg,
-		queue: queue,
-		ipt:   &iptablesRunner{},
+		dpCfg:     dpCfg,
+		queue:     queue,
+		ipt:       &execIptablesRunner{},
+		chainName: buildChainName(dpCfg.Name),
 	}
 }
 
-const (
-	chainName = "trojan-port-redir"
-	natTable  = "nat"
-)
+const natTable = "nat"
+
+func buildChainName(name string) string {
+	return fmt.Sprintf("smdp-%08x", crc32.ChecksumIEEE([]byte(name)))
+}
 
 // InitIptables prepares the iptables rules for dynamic port forwarding.
 func (s *PortService) InitIptables() error {
-	c := s.cfg.Cron.DynamicPort
+	c := s.dpCfg
 	portRange := fmt.Sprintf("%d:%d", c.Min, c.Max)
 
-	slog.Info("Initializing iptables for dynamic ports", "range", portRange)
+	slog.Info("Initializing iptables for dynamic ports", "service", c.Name, "protocol", c.Protocol, "range", portRange)
 
-	// Clean up existing drop rule to avoid duplicates and re-add it.
-	_ = s.ipt.Run("-D", "INPUT", "-p", "tcp", "--dport", portRange, "-j", "DROP")
-	if err := s.ipt.Run("-A", "INPUT", "-p", "tcp", "--dport", portRange, "-j", "DROP"); err != nil {
+	_ = s.ipt.Run("-D", "INPUT", "-p", c.Protocol, "--dport", portRange, "-j", "DROP")
+	if err := s.ipt.Run("-A", "INPUT", "-p", c.Protocol, "--dport", portRange, "-j", "DROP"); err != nil {
 		return fmt.Errorf("failed to add drop rule for range %s: %w", portRange, err)
 	}
 
@@ -52,14 +59,13 @@ func (s *PortService) InitIptables() error {
 }
 
 func (s *PortService) ensureCustomChain() error {
-	// If the chain exists, flush it; otherwise, create it and link to PREROUTING.
-	if err := s.ipt.Run("-t", natTable, "-F", chainName); err != nil {
-		slog.Debug("Creating new iptables chain", "chain", chainName)
-		if err := s.ipt.Run("-t", natTable, "-N", chainName); err != nil {
-			return fmt.Errorf("failed to create chain %s: %w", chainName, err)
+	if err := s.ipt.Run("-t", natTable, "-F", s.chainName); err != nil {
+		slog.Debug("Creating new iptables chain", "service", s.dpCfg.Name, "chain", s.chainName)
+		if err := s.ipt.Run("-t", natTable, "-N", s.chainName); err != nil {
+			return fmt.Errorf("failed to create chain %s: %w", s.chainName, err)
 		}
-		if err := s.ipt.Run("-t", natTable, "-A", "PREROUTING", "-j", chainName); err != nil {
-			return fmt.Errorf("failed to link %s chain to PREROUTING: %w", chainName, err)
+		if err := s.ipt.Run("-t", natTable, "-A", "PREROUTING", "-j", s.chainName); err != nil {
+			return fmt.Errorf("failed to link %s chain to PREROUTING: %w", s.chainName, err)
 		}
 	}
 	return nil
@@ -67,48 +73,60 @@ func (s *PortService) ensureCustomChain() error {
 
 // InitialSetup fills the queue with initial random ports and sets up iptables rules.
 func (s *PortService) InitialSetup() {
-	targetPort := fmt.Sprintf("%d", s.cfg.Cron.DynamicPort.TrojanPort)
+	if s.queue == nil {
+		return
+	}
+	targetPort := fmt.Sprintf("%d", s.dpCfg.TargetPort)
 
 	s.queue.Clear()
 	for !s.queue.IsFull() {
 		port := s.generateUniquePort()
+		if port == "" {
+			slog.Error("Failed to generate initial dynamic port", "service", s.dpCfg.Name)
+			break
+		}
 		if err := s.modifyRedirect("-A", port, targetPort); err != nil {
-			slog.Error("Failed to add initial redirect", "port", port, "error", err)
+			slog.Error("Failed to add initial redirect", "service", s.dpCfg.Name, "port", port, "error", err)
 			continue
 		}
 		s.queue.Enqueue(port)
 	}
-	slog.Info("Dynamic port initial setup complete", "active_ports", s.queue.Size())
+	slog.Info("Dynamic port initial setup complete", "service", s.dpCfg.Name, "active_ports", s.queue.Size())
 }
 
 // RotatePort replaces one old port with a new random port.
 func (s *PortService) RotatePort() {
-	targetPort := fmt.Sprintf("%d", s.cfg.Cron.DynamicPort.TrojanPort)
+	if s.queue == nil {
+		return
+	}
+	targetPort := fmt.Sprintf("%d", s.dpCfg.TargetPort)
 
-	// Remove the oldest port from both the queue and iptables.
 	if oldPort := s.queue.Dequeue(); oldPort != "" {
 		if err := s.modifyRedirect("-D", oldPort, targetPort); err != nil {
-			slog.Error("Failed to delete old redirect", "port", oldPort, "error", err)
+			slog.Error("Failed to delete old redirect", "service", s.dpCfg.Name, "port", oldPort, "error", err)
 		}
 	}
 
-	// Generate a new unique port and add its redirect rule.
 	newPort := s.generateUniquePort()
+	if newPort == "" {
+		slog.Error("Failed to generate new dynamic port", "service", s.dpCfg.Name)
+		return
+	}
 	if err := s.modifyRedirect("-A", newPort, targetPort); err != nil {
-		slog.Error("Failed to add new redirect", "port", newPort, "error", err)
+		slog.Error("Failed to add new redirect", "service", s.dpCfg.Name, "port", newPort, "error", err)
 		return
 	}
 	s.queue.Enqueue(newPort)
 
-	slog.Info("Dynamic port rotated", "new_port", newPort)
+	slog.Info("Dynamic port rotated", "service", s.dpCfg.Name, "new_port", newPort)
 }
 
 func (s *PortService) generateUniquePort() string {
-	c := s.cfg.Cron.DynamicPort
-	for range 100 { // Limit attempts to prevent hanging if range is too small.
+	c := s.dpCfg
+	for range 100 {
 		p := rand.Intn(c.Max-c.Min+1) + c.Min
 		port := fmt.Sprintf("%d", p)
-		if !s.queue.Has(port) {
+		if s.queue == nil || !s.queue.Has(port) {
 			return port
 		}
 	}
@@ -116,17 +134,17 @@ func (s *PortService) generateUniquePort() string {
 }
 
 func (s *PortService) modifyRedirect(action, srcPort, dstPort string) error {
-	return s.ipt.Run("-t", natTable, action, chainName, "-p", "tcp", "--dport", srcPort, "-j", "REDIRECT", "--to-port", dstPort)
+	return s.ipt.Run("-t", natTable, action, s.chainName, "-p", s.dpCfg.Protocol, "--dport", srcPort, "-j", "REDIRECT", "--to-port", dstPort)
 }
 
 // Task interface implementation
 
 func (s *PortService) Name() string {
-	return "DynamicPortRotation"
+	return fmt.Sprintf("DynamicPortRotation[%s]", s.dpCfg.Name)
 }
 
 func (s *PortService) Spec() string {
-	return s.cfg.Cron.DynamicPort.Cycle
+	return s.dpCfg.Cycle
 }
 
 func (s *PortService) Run() {
@@ -144,30 +162,23 @@ func (s *PortService) Init() error {
 // Cleanup removes all iptables rules created by this service.
 func (s *PortService) Cleanup() {
 	if err := s.CleanupIptables(); err != nil {
-		slog.Error("Failed to cleanup iptables", "error", err)
+		slog.Error("Failed to cleanup iptables", "service", s.dpCfg.Name, "error", err)
 	} else {
-		slog.Info("Iptables cleanup complete")
+		slog.Info("Iptables cleanup complete", "service", s.dpCfg.Name)
 	}
 }
 
 func (s *PortService) CleanupIptables() error {
-	c := s.cfg.Cron.DynamicPort
+	c := s.dpCfg
 	portRange := fmt.Sprintf("%d:%d", c.Min, c.Max)
 
-	slog.Info("Cleaning up iptables for dynamic ports", "range", portRange)
+	slog.Info("Cleaning up iptables for dynamic ports", "service", c.Name, "protocol", c.Protocol, "range", portRange)
 
-	// 1. Remove the drop rule from INPUT chain
-	_ = s.ipt.Run("-D", "INPUT", "-p", "tcp", "--dport", portRange, "-j", "DROP")
-
-	// 2. Remove the jump from PREROUTING to our custom chain
-	_ = s.ipt.Run("-t", natTable, "-D", "PREROUTING", "-j", chainName)
-
-	// 3. Flush the custom chain
-	_ = s.ipt.Run("-t", natTable, "-F", chainName)
-
-	// 4. Delete the custom chain
-	if err := s.ipt.Run("-t", natTable, "-X", chainName); err != nil {
-		return fmt.Errorf("failed to delete chain %s: %w", chainName, err)
+	_ = s.ipt.Run("-D", "INPUT", "-p", c.Protocol, "--dport", portRange, "-j", "DROP")
+	_ = s.ipt.Run("-t", natTable, "-D", "PREROUTING", "-j", s.chainName)
+	_ = s.ipt.Run("-t", natTable, "-F", s.chainName)
+	if err := s.ipt.Run("-t", natTable, "-X", s.chainName); err != nil {
+		return fmt.Errorf("failed to delete chain %s: %w", s.chainName, err)
 	}
 
 	return nil

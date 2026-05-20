@@ -158,14 +158,18 @@ additions:
 
 # 定时任务
 cron:
-  # 动态端口映射
-  dynamic-port:
-    enable: false
-    min: 10000
-    max: 65535
-    active-num: 3
-    trojan-port: 443
-    cycle: "@every 1m"
+  # 动态端口映射（仅对本地 proxy-path 中绑定的代理生效）
+  dynamic-ports:
+    - name: "trojan-tcp"
+      enable: false
+      protocol: "tcp"
+      min: 10000
+      max: 19999
+      active-num: 3
+      target-port: 443
+      cycle: "@every 1m"
+      proxies:
+        - "本地-Trojan-01"
 
   # 规则集自动更新
   rule-set:

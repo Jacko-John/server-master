@@ -18,11 +18,13 @@ import (
 )
 
 type SubscriptionService struct {
-	cfg        *config.Config
-	queue      *utils.Queue[string]
-	httpClient *http.Client
-	tokens     utils.Set[string]
-	cache      *utils.SafeMap[string, any]
+	cfg                       *config.Config
+	dynamicPorts              map[string]*DynamicPortRuntime
+	proxyBindings             map[string]string
+	defaultDynamicPortService string
+	httpClient                *http.Client
+	tokens                    map[string]struct{}
+	cache                     *utils.SafeMap[string, any]
 }
 
 type baseCacheEntry struct {
@@ -35,21 +37,6 @@ type depCacheEntry struct {
 	expires time.Time
 }
 
-func NewSubscriptionService(cfg *config.Config, queue *utils.Queue[string]) *SubscriptionService {
-	tokenSet := utils.NewSet[string]()
-	tokenSet.AddAll(cfg.Tokens)
-
-	return &SubscriptionService{
-		cfg:    cfg,
-		queue:  queue,
-		tokens: tokenSet,
-		cache:  utils.NewSafeMap[string, any](),
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-	}
-}
-
 type Dependency struct {
 	Proxies      []model.ClashProxy
 	ProxyGroups  []model.ClashProxyGroup
@@ -57,8 +44,42 @@ type Dependency struct {
 	UserInfo     string
 }
 
+func NewSubscriptionService(cfg *config.Config, dynamicPorts map[string]*DynamicPortRuntime) *SubscriptionService {
+	tokenSet := make(map[string]struct{}, len(cfg.Tokens))
+	for _, token := range cfg.Tokens {
+		tokenSet[token] = struct{}{}
+	}
+
+	s := &SubscriptionService{
+		cfg:           cfg,
+		dynamicPorts:  dynamicPorts,
+		proxyBindings: make(map[string]string),
+		tokens:        tokenSet,
+		cache:         utils.NewSafeMap[string, any](),
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+	}
+	s.buildProxyBindings()
+	return s
+}
+
+func (s *SubscriptionService) buildProxyBindings() {
+	for _, dp := range s.cfg.Cron.DynamicPorts {
+		if !dp.Enable {
+			continue
+		}
+		if len(dp.Proxies) == 0 {
+			s.defaultDynamicPortService = dp.Name
+			continue
+		}
+		for _, proxyName := range dp.Proxies {
+			s.proxyBindings[proxyName] = dp.Name
+		}
+	}
+}
+
 func (s *SubscriptionService) GetDependencies(ctx context.Context) (*Dependency, error) {
-	// Check Cache first
 	if val, ok := s.cache.Get("deps"); ok {
 		entry := val.(depCacheEntry)
 		if time.Now().Before(entry.expires) {
@@ -125,7 +146,7 @@ func (s *SubscriptionService) GetDependencies(ctx context.Context) (*Dependency,
 			dependency.PrependRules = append(dependency.PrependRules, it.PrependRules...)
 
 			if info := resp.Header.Get("Subscription-Userinfo"); info != "" {
-				if userInfo == "" || (len(info) > len(userInfo)) {
+				if userInfo == "" || len(info) > len(userInfo) {
 					userInfo = info
 				}
 			}
@@ -140,7 +161,6 @@ func (s *SubscriptionService) GetDependencies(ctx context.Context) (*Dependency,
 	}
 	dependency.UserInfo = userInfo
 
-	// Update Cache
 	s.cache.Set("deps", depCacheEntry{
 		data:    dependency,
 		expires: time.Now().Add(5 * time.Minute),
@@ -155,7 +175,6 @@ func (s *SubscriptionService) getBaseConfig() (*model.ClashConfig, error) {
 		return nil, fmt.Errorf("failed to stat base proxy file: %w", err)
 	}
 
-	// Check cache
 	if val, ok := s.cache.Get("base"); ok {
 		entry := val.(baseCacheEntry)
 		if entry.modTime.Equal(info.ModTime()) {
@@ -163,7 +182,6 @@ func (s *SubscriptionService) getBaseConfig() (*model.ClashConfig, error) {
 		}
 	}
 
-	// Load and parse
 	data, err := os.ReadFile(s.cfg.ProxyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read base proxy file: %w", err)
@@ -174,7 +192,6 @@ func (s *SubscriptionService) getBaseConfig() (*model.ClashConfig, error) {
 		return nil, fmt.Errorf("failed to unmarshal base proxy: %w", err)
 	}
 
-	// Update cache
 	s.cache.Set("base", baseCacheEntry{
 		data:    &proxy,
 		modTime: info.ModTime(),
@@ -184,25 +201,13 @@ func (s *SubscriptionService) getBaseConfig() (*model.ClashConfig, error) {
 }
 
 func (s *SubscriptionService) GenerateConfig(ctx context.Context) (*model.ClashConfig, string, error) {
-	// 1. Get base config (with ModTime caching)
 	proxy, err := s.getBaseConfig()
 	if err != nil {
 		return nil, "", err
 	}
 
-	// 2. Randomize ports if queue is available
-	if s.queue != nil && !s.queue.IsEmpty() {
-		for i := range proxy.Proxies {
-			portStr := s.queue.Rand()
-			if portStr != "" {
-				if port, err := strconv.Atoi(portStr); err == nil {
-					proxy.Proxies[i].Port = port
-				}
-			}
-		}
-	}
+	s.applyDynamicPortsToLocalProxies(proxy)
 
-	// 3. Get external dependencies (with TTL caching)
 	dp, err := s.GetDependencies(ctx)
 	if err != nil {
 		return nil, "", err
@@ -217,8 +222,43 @@ func (s *SubscriptionService) GenerateConfig(ctx context.Context) (*model.ClashC
 	return proxy, dp.UserInfo, nil
 }
 
+func (s *SubscriptionService) applyDynamicPortsToLocalProxies(cfg *model.ClashConfig) {
+	for i := range cfg.Proxies {
+		serviceName := s.dynamicPortServiceForProxy(cfg.Proxies[i].Name)
+		if serviceName == "" {
+			continue
+		}
+
+		runtime, ok := s.dynamicPorts[serviceName]
+		if !ok || runtime == nil || runtime.Config == nil || !runtime.Config.Enable || runtime.Queue == nil || runtime.Queue.IsEmpty() {
+			slog.Warn("Dynamic port service unavailable for local proxy", "proxy", cfg.Proxies[i].Name, "service", serviceName)
+			continue
+		}
+
+		portStr := runtime.Queue.Rand()
+		if portStr == "" {
+			slog.Warn("Dynamic port service returned empty port", "proxy", cfg.Proxies[i].Name, "service", serviceName)
+			continue
+		}
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			slog.Warn("Dynamic port service returned invalid port", "proxy", cfg.Proxies[i].Name, "service", serviceName, "port", portStr, "error", err)
+			continue
+		}
+		cfg.Proxies[i].Port = port
+	}
+}
+
+func (s *SubscriptionService) dynamicPortServiceForProxy(proxyName string) string {
+	if serviceName, ok := s.proxyBindings[proxyName]; ok {
+		return serviceName
+	}
+	return s.defaultDynamicPortService
+}
+
 func (s *SubscriptionService) ValidateToken(token string) bool {
-	return s.tokens.Has(token)
+	_, ok := s.tokens[token]
+	return ok
 }
 
 func (s *SubscriptionService) GetConfig() config.SubscriptionConfig {

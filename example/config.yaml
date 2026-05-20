@@ -56,20 +56,36 @@ additions:
 
 # --- 后台定时任务设置 (Cron) ---
 cron:
-  # 1. 动态端口映射任务 (Dynamic Port)
-  # 通过 iptables 随机化本地转发端口，增加安全性
-  dynamic-port:
-    enable: false
-    # 随机端口生成的范围 [min, max]
-    min: 10000
-    max: 65535
-    # 同时维持的活跃端口数量
-    active-num: 3
-    # 转发的目标端口（例如本机运行的 Trojan 端口）
-    trojan-port: 443
-    # 执行周期，符合 cron 表达式格式
-    # @every 1m 表示每分钟执行一次
-    cycle: "@every 1m"
+  # 1. 动态端口映射任务 (Dynamic Ports)
+  # 仅对本地 proxy-path 中列出的代理节点生效，不会影响 additions 拉取的外部订阅节点
+  dynamic-ports:
+    - name: "trojan-tcp"
+      enable: false
+      protocol: "tcp"
+      # 随机端口生成的范围 [min, max]
+      min: 10000
+      max: 19999
+      # 同时维持的活跃端口数量
+      active-num: 3
+      # 转发的目标端口（例如本机运行的 Trojan 端口）
+      target-port: 443
+      # 执行周期，符合 cron 表达式格式
+      cycle: "@every 1m"
+      # 绑定到这个动态端口服务的本地代理名称（来自 proxy-path）
+      proxies:
+        - "本地-Trojan-01"
+        - "本地-Trojan-02"
+
+    - name: "hysteria2-udp"
+      enable: false
+      protocol: "udp"
+      min: 20000
+      max: 29999
+      active-num: 5
+      target-port: 8443
+      cycle: "@every 30s"
+      proxies:
+        - "本地-Hysteria2-01"
 
   # 2. 规则集自动更新任务 (Rule Set)
   # 自动从远程下载规则集文件并保存到本地 rule-path

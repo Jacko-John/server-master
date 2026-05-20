@@ -7,16 +7,24 @@ import (
 )
 
 func TestConfigLoad(t *testing.T) {
-	// Create a temporary config file
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
-	
+
 	content := `
 listen: ":8080"
 proxy-path: "proxies.yaml"
 tokens: ["test-token"]
 log-path: "test.log"
 rule-path: "rules/"
+cron:
+  dynamic-ports:
+    - name: "default"
+      enable: true
+      protocol: "tcp"
+      min: 10000
+      max: 10010
+      active-num: 2
+      target-port: 443
 `
 	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to create temp config: %v", err)
@@ -30,12 +38,25 @@ rule-path: "rules/"
 	if cfg.Listen != ":8080" {
 		t.Errorf("expected listen :8080, got %s", cfg.Listen)
 	}
-
 	if len(cfg.Tokens) != 1 || cfg.Tokens[0] != "test-token" {
 		t.Error("tokens not loaded correctly")
 	}
+	if len(cfg.Cron.DynamicPorts) != 1 {
+		t.Fatalf("expected normalized dynamic ports length 1, got %d", len(cfg.Cron.DynamicPorts))
+	}
+	if cfg.Cron.DynamicPorts[0].Name != "default" {
+		t.Errorf("expected default dynamic port name, got %s", cfg.Cron.DynamicPorts[0].Name)
+	}
+	if cfg.Cron.DynamicPorts[0].Protocol != "tcp" {
+		t.Errorf("expected default protocol tcp, got %s", cfg.Cron.DynamicPorts[0].Protocol)
+	}
+	if cfg.Cron.DynamicPorts[0].TargetPort != 443 {
+		t.Errorf("expected target port 443, got %d", cfg.Cron.DynamicPorts[0].TargetPort)
+	}
+	if cfg.Cron.DynamicPorts[0].Cycle != "@every 1m" {
+		t.Errorf("expected default cycle @every 1m, got %s", cfg.Cron.DynamicPorts[0].Cycle)
+	}
 
-	// Verify default subscription configuration
 	if cfg.Subscription.Filename != "Jacko.yaml" {
 		t.Errorf("expected default filename Jacko.yaml, got %s", cfg.Subscription.Filename)
 	}
@@ -60,6 +81,18 @@ func TestConfigValidate(t *testing.T) {
 				ProxyPath: "p.yaml",
 				Tokens:    []string{"t"},
 				RulePath:  "r/",
+				Cron: CronConfig{
+					DynamicPorts: []DynamicPortServiceConfig{{
+						Name:       "tcp-service",
+						Enable:     true,
+						Protocol:   "tcp",
+						Min:        10000,
+						Max:        10010,
+						ActiveNum:  2,
+						TargetPort: 443,
+						Proxies:    []string{"local-a", "local-b"},
+					}},
+				},
 			},
 			wantErr: false,
 		},
@@ -73,17 +106,88 @@ func TestConfigValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "invalid cron ports",
+			name: "invalid protocol",
 			cfg: Config{
 				Listen:    ":8080",
 				ProxyPath: "p.yaml",
 				Tokens:    []string{"t"},
 				RulePath:  "r/",
 				Cron: CronConfig{
-					DynamicPort: DynamicPortConfig{
-						Enable: true,
-						Max:    100,
-						Min:    200,
+					DynamicPorts: []DynamicPortServiceConfig{{
+						Name:       "bad-service",
+						Enable:     true,
+						Protocol:   "icmp",
+						Min:        10000,
+						Max:        10010,
+						ActiveNum:  1,
+						TargetPort: 443,
+					}},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "duplicate proxy binding",
+			cfg: Config{
+				Listen:    ":8080",
+				ProxyPath: "p.yaml",
+				Tokens:    []string{"t"},
+				RulePath:  "r/",
+				Cron: CronConfig{
+					DynamicPorts: []DynamicPortServiceConfig{
+						{
+							Name:       "tcp-a",
+							Enable:     true,
+							Protocol:   "tcp",
+							Min:        10000,
+							Max:        10010,
+							ActiveNum:  1,
+							TargetPort: 443,
+							Proxies:    []string{"local-a"},
+						},
+						{
+							Name:       "udp-b",
+							Enable:     true,
+							Protocol:   "udp",
+							Min:        20000,
+							Max:        20010,
+							ActiveNum:  1,
+							TargetPort: 8443,
+							Proxies:    []string{"local-a"},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "wildcard with multiple enabled services",
+			cfg: Config{
+				Listen:    ":8080",
+				ProxyPath: "p.yaml",
+				Tokens:    []string{"t"},
+				RulePath:  "r/",
+				Cron: CronConfig{
+					DynamicPorts: []DynamicPortServiceConfig{
+						{
+							Name:       "default",
+							Enable:     true,
+							Protocol:   "tcp",
+							Min:        10000,
+							Max:        10010,
+							ActiveNum:  1,
+							TargetPort: 443,
+						},
+						{
+							Name:       "other",
+							Enable:     true,
+							Protocol:   "udp",
+							Min:        20000,
+							Max:        20010,
+							ActiveNum:  1,
+							TargetPort: 8443,
+							Proxies:    []string{"local-udp"},
+						},
 					},
 				},
 			},
