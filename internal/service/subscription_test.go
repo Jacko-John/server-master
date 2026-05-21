@@ -352,6 +352,53 @@ rules: []`
 	}
 }
 
+func TestSubscriptionService_GenerateConfig_IgnoresRangeModeServices(t *testing.T) {
+	tempDir := t.TempDir()
+	proxyPath := filepath.Join(tempDir, "proxy.yaml")
+
+	baseProxy := `proxies:
+  - name: local-range
+    type: trojan
+    server: example.com
+    port: 443
+rules: []`
+	if err := os.WriteFile(proxyPath, []byte(baseProxy), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		ProxyPath: proxyPath,
+		Cron: config.CronConfig{
+			DynamicPorts: []config.DynamicPortServiceConfig{{
+				Name:       "range-service",
+				Enable:     true,
+				Mode:       config.DynamicPortModeRange,
+				Protocol:   "tcp",
+				Min:        10000,
+				Max:        10010,
+				TargetPort: 443,
+				Cycle:      "@every 1m",
+			}},
+		},
+	}
+
+	registry := map[string]*DynamicPortRuntime{
+		"range-service": newDynamicPortRuntime("range-service", "tcp", "15001"),
+	}
+
+	s := NewSubscriptionService(cfg, registry)
+	result, _, err := s.GenerateConfig(context.Background())
+	if err != nil {
+		t.Fatalf("GenerateConfig failed: %v", err)
+	}
+
+	proxyMaps := mustMarshalProxyMaps(t, result)
+	localRange := findProxyMap(t, proxyMaps, "local-range")
+	if got := localRange["port"]; got != 443 {
+		t.Fatalf("expected local-range port to stay 443, got %#v", got)
+	}
+}
+
 func newDynamicPortRuntime(name, protocol string, ports ...string) *DynamicPortRuntime {
 	queue := utils.NewQueue[string](len(ports))
 	for _, port := range ports {

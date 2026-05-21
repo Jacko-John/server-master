@@ -66,7 +66,7 @@ func NewSubscriptionService(cfg *config.Config, dynamicPorts map[string]*Dynamic
 
 func (s *SubscriptionService) buildProxyBindings() {
 	for _, dp := range s.cfg.Cron.DynamicPorts {
-		if !dp.Enable {
+		if !dp.Enable || dp.Mode == config.DynamicPortModeRange {
 			continue
 		}
 		if len(dp.Proxies) == 0 {

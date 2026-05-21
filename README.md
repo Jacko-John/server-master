@@ -28,7 +28,7 @@ ServerMaster 是一个基于 Go 语言开发的代理配置管理套件,专门�
 
 - 订阅合并与管理 - 支持本地节点与多个外部订阅源的智能合并
 - 规则集缓存 - 自动下载和缓存远程规则集文件,支持本地分发
-- 动态端口映射 - 通过 iptables 实现端口随机化,提升安全性
+- 动态端口/范围映射 - 通过 iptables 实现随机活跃端口或整段范围映射,提升安全性
 - 定时任务调度 - 灵活的 cron 任务系统,支持后台自动更新
 - 灵活配置管理 - 基于 YAML 的配置文件,支持多租户 Token 认证
 
@@ -158,10 +158,13 @@ additions:
 
 # 定时任务
 cron:
-  # 动态端口映射（仅对本地 proxy-path 中绑定的代理生效）
+  # 动态端口映射
+  # mode: rotate 仅改写本地 proxy-path 中绑定代理的订阅端口
+  # mode: range 仅在服务端建立 [min, max] -> target-port 的整段映射
   dynamic-ports:
     - name: "trojan-tcp"
       enable: false
+      mode: "rotate"
       protocol: "tcp"
       min: 10000
       max: 19999
@@ -170,6 +173,15 @@ cron:
       cycle: "@every 1m"
       proxies:
         - "本地-Trojan-01"
+
+    - name: "trojan-range"
+      enable: false
+      mode: "range"
+      protocol: "tcp"
+      min: 30000
+      max: 30010
+      target-port: 443
+      cycle: "@every 5m"
 
   # 规则集自动更新
   rule-set:

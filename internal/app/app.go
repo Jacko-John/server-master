@@ -48,12 +48,17 @@ func New(configPath string) (*App, error) {
 			continue
 		}
 		dpCfg := dynamicPort
-		queue := utils.NewQueue[string](dpCfg.ActiveNum)
+		var queue *utils.Queue[string]
+		if dpCfg.Mode != config.DynamicPortModeRange {
+			queue = utils.NewQueue[string](dpCfg.ActiveNum)
+		}
 		portService := service.NewPortService(dpCfg, queue)
-		dynamicPortRegistry[dpCfg.Name] = &service.DynamicPortRuntime{
-			Config: &dpCfg,
-			Queue:  queue,
-			Port:   portService,
+		if queue != nil {
+			dynamicPortRegistry[dpCfg.Name] = &service.DynamicPortRuntime{
+				Config: &dpCfg,
+				Queue:  queue,
+				Port:   portService,
+			}
 		}
 		portServices = append(portServices, portService)
 	}

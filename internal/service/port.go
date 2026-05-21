@@ -43,10 +43,32 @@ func buildChainName(name string) string {
 	return fmt.Sprintf("smdp-%08x", crc32.ChecksumIEEE([]byte(name)))
 }
 
+func (s *PortService) isRangeMode() bool {
+	return s.dpCfg.Mode == config.DynamicPortModeRange
+}
+
+func (s *PortService) portRange() string {
+	return fmt.Sprintf("%d:%d", s.dpCfg.Min, s.dpCfg.Max)
+}
+
+func (s *PortService) targetPort() string {
+	return fmt.Sprintf("%d", s.dpCfg.TargetPort)
+}
+
+func (s *PortService) syncRangeRedirect() error {
+	portRange := s.portRange()
+	targetPort := s.targetPort()
+	_ = s.modifyRedirect("-D", portRange, targetPort)
+	if err := s.modifyRedirect("-A", portRange, targetPort); err != nil {
+		return fmt.Errorf("failed to add range redirect for %s: %w", portRange, err)
+	}
+	return nil
+}
+
 // InitIptables prepares the iptables rules for dynamic port forwarding.
 func (s *PortService) InitIptables() error {
 	c := s.dpCfg
-	portRange := fmt.Sprintf("%d:%d", c.Min, c.Max)
+	portRange := s.portRange()
 
 	slog.Info("Initializing iptables for dynamic ports", "service", c.Name, "protocol", c.Protocol, "range", portRange)
 
@@ -73,10 +95,18 @@ func (s *PortService) ensureCustomChain() error {
 
 // InitialSetup fills the queue with initial random ports and sets up iptables rules.
 func (s *PortService) InitialSetup() {
+	if s.isRangeMode() {
+		if err := s.syncRangeRedirect(); err != nil {
+			slog.Error("Failed to sync initial range redirect", "service", s.dpCfg.Name, "error", err)
+			return
+		}
+		slog.Info("Dynamic port range setup complete", "service", s.dpCfg.Name, "range", s.portRange())
+		return
+	}
 	if s.queue == nil {
 		return
 	}
-	targetPort := fmt.Sprintf("%d", s.dpCfg.TargetPort)
+	targetPort := s.targetPort()
 
 	s.queue.Clear()
 	for !s.queue.IsFull() {
@@ -96,10 +126,16 @@ func (s *PortService) InitialSetup() {
 
 // RotatePort replaces one old port with a new random port.
 func (s *PortService) RotatePort() {
+	if s.isRangeMode() {
+		if err := s.syncRangeRedirect(); err != nil {
+			slog.Error("Failed to sync range redirect", "service", s.dpCfg.Name, "error", err)
+		}
+		return
+	}
 	if s.queue == nil {
 		return
 	}
-	targetPort := fmt.Sprintf("%d", s.dpCfg.TargetPort)
+	targetPort := s.targetPort()
 
 	if oldPort := s.queue.Dequeue(); oldPort != "" {
 		if err := s.modifyRedirect("-D", oldPort, targetPort); err != nil {
@@ -170,7 +206,7 @@ func (s *PortService) Cleanup() {
 
 func (s *PortService) CleanupIptables() error {
 	c := s.dpCfg
-	portRange := fmt.Sprintf("%d:%d", c.Min, c.Max)
+	portRange := s.portRange()
 
 	slog.Info("Cleaning up iptables for dynamic ports", "service", c.Name, "protocol", c.Protocol, "range", portRange)
 

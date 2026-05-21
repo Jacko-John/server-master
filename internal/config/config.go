@@ -50,14 +50,20 @@ type CronConfig struct {
 	RuleSet      RuleSetConfig              `yaml:"rule-set" json:"rule_set"`
 }
 
+const (
+	DynamicPortModeRotate = "rotate"
+	DynamicPortModeRange  = "range"
+)
+
 // DynamicPortServiceConfig holds settings for one dynamic port service.
 type DynamicPortServiceConfig struct {
 	Name       string   `yaml:"name" json:"name"`
 	Enable     bool     `yaml:"enable" json:"enable"`
+	Mode       string   `yaml:"mode,omitempty" json:"mode,omitempty"`
 	Protocol   string   `yaml:"protocol" json:"protocol"`
 	Max        int      `yaml:"max" json:"max"`
 	Min        int      `yaml:"min" json:"min"`
-	ActiveNum  int      `yaml:"active-num" json:"active_num"`
+	ActiveNum  int      `yaml:"active-num,omitempty" json:"active_num,omitempty"`
 	TargetPort int      `yaml:"target-port" json:"target_port"`
 	Cycle      string   `yaml:"cycle" json:"cycle"`
 	Proxies    []string `yaml:"proxies,omitempty" json:"proxies,omitempty"`
@@ -151,7 +157,7 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) validateDynamicPorts() error {
-	enabledCount := 0
+	rotateEnabledCount := 0
 	wildcardCount := 0
 	names := make(map[string]struct{})
 	proxyBindings := make(map[string]string)
@@ -162,7 +168,6 @@ func (c *Config) validateDynamicPorts() error {
 			continue
 		}
 
-		enabledCount++
 		if dp.Name == "" {
 			return fmt.Errorf("cron.dynamic-ports[%d]: name is required", i)
 		}
@@ -170,6 +175,14 @@ func (c *Config) validateDynamicPorts() error {
 			return fmt.Errorf("cron.dynamic-ports[%d]: duplicated name %q", i, dp.Name)
 		}
 		names[dp.Name] = struct{}{}
+
+		dp.Mode = strings.ToLower(dp.Mode)
+		if dp.Mode == "" {
+			dp.Mode = DynamicPortModeRotate
+		}
+		if dp.Mode != DynamicPortModeRotate && dp.Mode != DynamicPortModeRange {
+			return fmt.Errorf("cron.dynamic-ports[%d]: mode must be %q or %q", i, DynamicPortModeRotate, DynamicPortModeRange)
+		}
 
 		dp.Protocol = strings.ToLower(dp.Protocol)
 		if dp.Protocol == "" {
@@ -184,34 +197,46 @@ func (c *Config) validateDynamicPorts() error {
 		if dp.Max <= dp.Min {
 			return fmt.Errorf("cron.dynamic-ports[%d]: max (%d) must be greater than min (%d)", i, dp.Max, dp.Min)
 		}
-		if dp.ActiveNum <= 0 {
-			return fmt.Errorf("cron.dynamic-ports[%d]: active-num must be greater than 0", i)
-		}
-		if dp.Max-dp.Min+1 < dp.ActiveNum {
-			return fmt.Errorf("cron.dynamic-ports[%d]: port range [%d, %d] is smaller than active-num %d", i, dp.Min, dp.Max, dp.ActiveNum)
-		}
 		if dp.TargetPort <= 0 || dp.TargetPort > 65535 {
 			return fmt.Errorf("cron.dynamic-ports[%d]: target-port must be in range 1-65535", i)
 		}
 		if dp.Cycle == "" {
 			dp.Cycle = "@every 1m"
 		}
-		if len(dp.Proxies) == 0 {
-			wildcardCount++
-		}
-		for _, proxyName := range dp.Proxies {
-			if proxyName == "" {
-				return fmt.Errorf("cron.dynamic-ports[%d]: proxies contains empty proxy name", i)
+
+		switch dp.Mode {
+		case DynamicPortModeRotate:
+			rotateEnabledCount++
+			if dp.ActiveNum <= 0 {
+				return fmt.Errorf("cron.dynamic-ports[%d]: active-num must be greater than 0 in %s mode", i, DynamicPortModeRotate)
 			}
-			if boundTo, exists := proxyBindings[proxyName]; exists {
-				return fmt.Errorf("cron.dynamic-ports[%d]: proxy %q is already bound to %q", i, proxyName, boundTo)
+			if dp.Max-dp.Min+1 < dp.ActiveNum {
+				return fmt.Errorf("cron.dynamic-ports[%d]: port range [%d, %d] is smaller than active-num %d", i, dp.Min, dp.Max, dp.ActiveNum)
 			}
-			proxyBindings[proxyName] = dp.Name
+			if len(dp.Proxies) == 0 {
+				wildcardCount++
+			}
+			for _, proxyName := range dp.Proxies {
+				if proxyName == "" {
+					return fmt.Errorf("cron.dynamic-ports[%d]: proxies contains empty proxy name", i)
+				}
+				if boundTo, exists := proxyBindings[proxyName]; exists {
+					return fmt.Errorf("cron.dynamic-ports[%d]: proxy %q is already bound to %q", i, proxyName, boundTo)
+				}
+				proxyBindings[proxyName] = dp.Name
+			}
+		case DynamicPortModeRange:
+			if dp.ActiveNum != 0 {
+				return fmt.Errorf("cron.dynamic-ports[%d]: active-num is only supported in %s mode", i, DynamicPortModeRotate)
+			}
+			if len(dp.Proxies) != 0 {
+				return fmt.Errorf("cron.dynamic-ports[%d]: proxies is only supported in %s mode", i, DynamicPortModeRotate)
+			}
 		}
 	}
 
-	if wildcardCount > 0 && enabledCount > 1 {
-		return fmt.Errorf("only one enabled dynamic port service may omit proxies")
+	if wildcardCount > 0 && rotateEnabledCount > 1 {
+		return fmt.Errorf("only one enabled %s dynamic port service may omit proxies", DynamicPortModeRotate)
 	}
 
 	return nil

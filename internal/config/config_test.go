@@ -47,6 +47,9 @@ cron:
 	if cfg.Cron.DynamicPorts[0].Name != "default" {
 		t.Errorf("expected default dynamic port name, got %s", cfg.Cron.DynamicPorts[0].Name)
 	}
+	if cfg.Cron.DynamicPorts[0].Mode != DynamicPortModeRotate {
+		t.Errorf("expected default mode %s, got %s", DynamicPortModeRotate, cfg.Cron.DynamicPorts[0].Mode)
+	}
 	if cfg.Cron.DynamicPorts[0].Protocol != "tcp" {
 		t.Errorf("expected default protocol tcp, got %s", cfg.Cron.DynamicPorts[0].Protocol)
 	}
@@ -125,6 +128,104 @@ func TestConfigValidate(t *testing.T) {
 				},
 			},
 			wantErr: true,
+		},
+		{
+			name: "range mode valid config",
+			cfg: Config{
+				Listen:    ":8080",
+				ProxyPath: "p.yaml",
+				Tokens:    []string{"t"},
+				RulePath:  "r/",
+				Cron: CronConfig{
+					DynamicPorts: []DynamicPortServiceConfig{{
+						Name:       "range-service",
+						Enable:     true,
+						Mode:       DynamicPortModeRange,
+						Protocol:   "tcp",
+						Min:        10000,
+						Max:        10010,
+						TargetPort: 443,
+					}},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "range mode rejects proxies",
+			cfg: Config{
+				Listen:    ":8080",
+				ProxyPath: "p.yaml",
+				Tokens:    []string{"t"},
+				RulePath:  "r/",
+				Cron: CronConfig{
+					DynamicPorts: []DynamicPortServiceConfig{{
+						Name:       "range-service",
+						Enable:     true,
+						Mode:       DynamicPortModeRange,
+						Protocol:   "tcp",
+						Min:        10000,
+						Max:        10010,
+						TargetPort: 443,
+						Proxies:    []string{"local-a"},
+					}},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "range mode rejects active num",
+			cfg: Config{
+				Listen:    ":8080",
+				ProxyPath: "p.yaml",
+				Tokens:    []string{"t"},
+				RulePath:  "r/",
+				Cron: CronConfig{
+					DynamicPorts: []DynamicPortServiceConfig{{
+						Name:       "range-service",
+						Enable:     true,
+						Mode:       DynamicPortModeRange,
+						Protocol:   "tcp",
+						Min:        10000,
+						Max:        10010,
+						ActiveNum:  1,
+						TargetPort: 443,
+					}},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "rotate wildcard can coexist with range service",
+			cfg: Config{
+				Listen:    ":8080",
+				ProxyPath: "p.yaml",
+				Tokens:    []string{"t"},
+				RulePath:  "r/",
+				Cron: CronConfig{
+					DynamicPorts: []DynamicPortServiceConfig{
+						{
+							Name:       "default",
+							Enable:     true,
+							Mode:       DynamicPortModeRotate,
+							Protocol:   "tcp",
+							Min:        10000,
+							Max:        10010,
+							ActiveNum:  1,
+							TargetPort: 443,
+						},
+						{
+							Name:       "range-service",
+							Enable:     true,
+							Mode:       DynamicPortModeRange,
+							Protocol:   "udp",
+							Min:        20000,
+							Max:        20010,
+							TargetPort: 8443,
+						},
+					},
+				},
+			},
+			wantErr: false,
 		},
 		{
 			name: "duplicate proxy binding",
